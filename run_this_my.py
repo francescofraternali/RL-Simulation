@@ -1,12 +1,7 @@
 """
-Reinforcement learning maze example.
-Red rectangle:          explorer.
-Black rectangles:       hells       [reward = -1].
-Yellow bin circle:      paradise    [reward = +1].
-All other states:       ground      [reward = 0].
-This script is the main part which controls the update method of this example.
+Reinforcement learning.
 The RL is in RL_brain.py.
-View more on my tutorial page: https://morvanzhou.github.io/tutorials/
+
 """
 
 #from maze_env import Maze
@@ -27,7 +22,7 @@ best_reward = 0; Perc_Best = 0
 
 def update():
     best_reward = 0
-    for episode in range(2000):
+    for episode in range(10):
         # initial observation
         #observation = env.reset()
         start_time = datetime.datetime(2018,1,1,7,00,00)
@@ -171,19 +166,23 @@ def update():
             SC_Best_norm_hist = SC_norm_hist
             Perc_Best = Perc
 
-            '''
+
             #Start Plotting
             fig, ax = plt.subplots(1)
             fig.autofmt_xdate()
             #plt.plot(Time_Best, SC_Volt_Best, 'ro', Time_Best, perf_Best, 'b', Time_Best, Light_Best,'c.', Time_Best, Action_Best, 'y*', Time_Best, r_Best,'k')
-            plt.plot(cnt_Best, Light_Best, 'ro', cnt_Best, Action_Best, 'y*', cnt_Best, r_Best,'k')
-            #xfmt = mdates.DateFormatter('%m-%d-%y %H:%M:%S')
-            #ax.xaxis.set_major_formatter(xfmt)
+            plt.plot(Time_Best, Light_Best, 'b', label = 'Light' )
+            plt.plot(Time_Best, Action_Best, 'y*', label = 'Action')
+            plt.plot(Time_Best, r_Best, 'k+', label = 'Reward')
+            #plt.plot(Time_Best, perf_Best, 'g', label = 'Performance')
+            plt.plot(Time_Best, SC_Best, 'r+', label = 'SC_Voltage')
+            xfmt = mdates.DateFormatter('%m-%d-%y %H:%M:%S')
+            ax.xaxis.set_major_formatter(xfmt)
             plt.title('Temporary Best Experimental Result')
             plt.ylabel('Super Capacitor Voltage[V]')
             plt.xlabel('Time[h]')
             plt.show()
-            '''
+
         print("Episode", episode, "Total Number of Points", len(Time_hist), "Reward", R, "Percentage","%.2f%%" % Perc)
 
     # end of game
