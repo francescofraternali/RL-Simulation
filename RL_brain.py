@@ -6,10 +6,14 @@ View more on my tutorial page: https://morvanzhou.github.io/tutorials/
 
 import numpy as np
 import pandas as pd
+import math
 
+MIN_EPSILON = 0.001
+LAMBDA = 0.001      # speed of decay
 
 class QLearningTable:
     def __init__(self, actions, learning_rate=0.01, reward_decay=0.9, e_greedy=0.9):
+        self.steps = 0
         self.actions = actions  # a list
         self.lr = learning_rate
         self.gamma = reward_decay
@@ -19,14 +23,22 @@ class QLearningTable:
     def choose_action(self, observation):
         self.check_state_exist(observation)
         # action selection
-        if np.random.uniform() < self.epsilon:
+        #if np.random.uniform() < self.epsilon: #Original
+        if np.random.uniform() > self.epsilon:
             # choose best action
             state_action = self.q_table.loc[observation, :]
             state_action = state_action.reindex(np.random.permutation(state_action.index))     # some actions have same value
             action = state_action.idxmax()
+            #print("non random non")
         else:
             # choose random action
+            #print("random")
             action = np.random.choice(self.actions)
+
+        self.steps += 1
+        self.epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * math.exp(-LAMBDA * self.steps)
+        #print(self.steps)
+        #print(self.epsilon)
         return action
 
     def learn(self, s, a, r, s_):
