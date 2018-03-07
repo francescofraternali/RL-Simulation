@@ -22,23 +22,22 @@ import matplotlib.dates as mdates
 import Reward_Policies_Func as rp
 
 #Settings
-Start_Real_Time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-Starting_time = datetime.datetime(2018,1,1,7,00,00)
+Start_Real_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
+Starting_time = datetime.datetime(2018,1,1,12,00,00)
 Ending_time = datetime.datetime(2018,1,4,7,00,00)
 
-I_Solar_200lux = 0.000031
-SC_Volt_max = 5.50; SC_Volt_min = 2.1; Init_SC_Volt = 3.5; SC_norm_max = 10; SC_norm_min = 1
+Init_SC_Volt = 3.5; SC_norm_max = 10; SC_norm_min = 1
 
-I_sleep = 0.0000015; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3; V_Solar = 1.5; I_Solar = I_Solar_200lux; SC_size = 1.5
 reset = 60*60*24; cnt_max = 10000
 Perc_Best = 0;
+Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
 norm_light_min = 0; norm_light_max = 1
 Light_max = 10; Light_min = 0; Light_feed = 0.00
 # My stuff over
 
-MEMORY_CAPACITY = 1000000  # It was 100000
-MIN_EPSILON = 0.001 # Default 0.01
-tot_episodes = 1000; Text = "DQN, SC, Light, E_min = " + str(MIN_EPSILON) + "Mem =  " + str(MEMORY_CAPACITY)
+MEMORY_CAPACITY = 100000  # It was 100000
+MIN_EPSILON = 0.01 # Default 0.01
+tot_episodes = 1000; Text = "DQN_HUBER(SC_Light_Time)-Mem_" + str(MEMORY_CAPACITY)
 
 #----------
 HUBER_LOSS_DELTA = 1.0
@@ -76,7 +75,8 @@ class Brain:
         model.add(Dense(units=actionCnt, activation='linear'))
 
         opt = RMSprop(lr=LEARNING_RATE)
-        model.compile(loss=huber_loss, optimizer=opt)
+        #model.compile(loss=huber_loss, optimizer=opt) # Original
+        model.compile(loss='mse', optimizer=opt)
 
         return model
 
@@ -224,16 +224,18 @@ class Environment:
         curr_time_next = curr_time
         end_time = Ending_time
         curr_time_h = curr_time.hour
+        curr_time_h_feed = (curr_time_h - Time_h_min)/float((Time_h_max - Time_h_min))
+        curr_time_h_feed = round(curr_time_h_feed,2)
         #Light_sec = 8*60*60 # 8 hour
-        Light = 10; Perc = 0; cnt = 0; perf = 4; time_temp = 4; reward = 0; R = 0; done = False; Occupancy = 0
+        Light = 10; Perc = 0; cnt = 0; perf = 8; time_temp = 4; reward = 0; R = 0; done = False; Occupancy = 0
         SC_temp = Init_SC_Volt
-        SC_temp, perf, SC_norm, SC_feed = rp.calc_energy_prod_consu(time_temp, SC_temp, Light, perf)
+        SC_temp, SC_norm, SC_feed = rp.calc_energy_prod_consu(time_temp, SC_temp, Light)
         cnt_hist = []; Light_hist = []; Action_hist = []; r_hist = []; Time_hist = []; perf_hist = []; SC_hist = []; SC_norm_hist = []; Occup_hist = []; Light_feed_hist = []; SC_feed_hist = []; Tot_Rew_hist = []
 
         # Normalize all parameters from 0 to 1 before feeding the RL
         Light_feed = (Light - Light_min)/float((Light_max - Light_min))
 
-        s = np.array([Light_feed, SC_feed,Light_feed, SC_feed])
+        s = np.array([SC_feed, Light_feed, curr_time_h_feed, Light_feed])
         s_ = s
 
         #while curr_time < end_time: # here it's like the agent(BS) wakes up and sense the light and battery
@@ -256,10 +258,12 @@ class Environment:
             Light_next, Occupancy_next, Light_feed_next = rp.calc_light_occup(curr_time_h)
 
             # Calculate Energy Produced and Consumed Based on the action taken
-            SC_temp_next, perf_next, SC_norm_next, SC_feed_next = rp.calc_energy_prod_consu(time_temp, SC_temp, Light, perf_next)
+            SC_temp_next, SC_norm_next, SC_feed_next = rp.calc_energy_prod_consu(time_temp, SC_temp, Light)
             # Adjust Environment Time
             curr_time_next = curr_time + datetime.timedelta(0,time_temp)
             curr_time_h_next = curr_time_next.hour
+            curr_time_h_feed_next = (curr_time_h_next - Time_h_min)/float((Time_h_max - Time_h_min))
+            curr_time_h_feed_next = round(curr_time_h_feed_next,2)
 
             cnt += 1;
             #reward += 1
@@ -269,7 +273,7 @@ class Environment:
                 done = True
 
             # Update s
-            s_[0] = Light_feed; s_[1] = SC_feed; s_[2] = Light_feed; s_[3] = SC_feed;
+            s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed; s_[3] = Light_feed_next;
             #s_ = np.array([Light_feed, SC_feed])
             # End Environment, now the Agent Observe an Learn from it
 
@@ -292,14 +296,13 @@ class Environment:
                 break
 
         Perc = (100 * float(R)/float(len(Time_hist)))
-        print("DQN-Episode: " + str(episode) + ", Steps: " + str(len(Time_hist)) + ", Reward: " + str(R) + ", Started Time: "+ Start_Real_Time)
+        print(Text + ", Epis: " + str(episode) + "/" + str(tot_episodes) + ", Rew: " + str(R) + ", Max_R: " + str(best_reward) + ", Started: " + Start_Real_Time)
         Tot_Reward.append(R); Tot_Episodes.append(episode)
         if R > best_reward:
             global Time_Best; global Light_Best; global cnt_Best; global SC_Best; global perf_Best; global Action_Best; global r_Best; global SC_Best_norm_hist; global SC_Feed_Best; global Light_Feed_Best; global Occup_Best
             Light_Best = Light_hist; Action_Best = Action_hist; r_Best = r_hist; cnt_Best = cnt_hist; best_reward = R; Time_Best = Time_hist
             perf_Best = perf_hist; SC_Best = SC_hist; SC_Best_norm_hist = SC_norm_hist; Perc_Best = Perc; Occup_Best = Occup_hist; Light_Feed_Best = Light_feed_hist; SC_Feed_Best = SC_feed_hist;
 
-            #rp.plot_reward(Tot_Episodes, Tot_Reward)
             '''
             #Start Plotting
             rp.plot_no_legend(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best)
@@ -343,9 +346,9 @@ print("Best total Reward", best_reward)
 
 # end of game
 print('Game Over and Best Perc Reward:', "%.2f%%" % Perc_Best, Text)
-End_Time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+End_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
 print("Start Time: " + Start_Real_Time + ", End Time: " + End_Time)
 
 #fig.savefig('/mnt/c/Users/Francesco/Desktop/Dropbox/EH/RL/RL_MY/Images/'+Text+'.png', bbox_inches='tight')
-rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text)
-rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text)
+rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, tot_episodes)
+rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, tot_episodes)
