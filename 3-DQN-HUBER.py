@@ -9,8 +9,9 @@
 #
 # author: Jaromir Janisch, 2016
 
-import random, numpy, math, gym, sys
+import random, numpy, math, sys
 from keras import backend as K
+import pickle
 
 import tensorflow as tf
 
@@ -33,11 +34,29 @@ Perc_Best = 0;
 Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
 norm_light_min = 0; norm_light_max = 1
 Light_max = 10; Light_min = 0; Light_feed = 0.00
-# My stuff over
+
 
 MEMORY_CAPACITY = 100000  # It was 100000
 MIN_EPSILON = 0.01 # Default 0.01
-tot_episodes = 1000; Text = "DQN_HUBER(SC_Light_Time)-Mem_" + str(MEMORY_CAPACITY)
+tot_episodes = 100000;
+
+diction_feat = {0 : 'SC_feed', 1: 'Light_feed'}
+#diction_feat = {0 : 'SC_feed', 1: 'Light_feed', 2: 'Time'}
+diction = {"MEMORY_CAPACITY": 100000, 100000 : "10k", 200000: "2k"}
+
+MEMORY_CAPACITY = diction["MEMORY_CAPACITY"]
+
+#Text = "QSimpleNN(" + diction[0] + "-" + diction[1] + ")-Mem_" + diction[MEMORY_CAPACITY]
+Text = "DQN_HUBER("
+for i in range(0,len(diction_feat)):
+    if i < len(diction_feat)-1:
+        Text = Text + diction_feat[i] + "_"
+    else:
+        Text = Text + diction_feat[i]
+
+Text = Text + ")-Mem_" + diction[MEMORY_CAPACITY]
+
+# My stuff over
 
 #----------
 HUBER_LOSS_DELTA = 1.0
@@ -235,7 +254,16 @@ class Environment:
         # Normalize all parameters from 0 to 1 before feeding the RL
         Light_feed = (Light - Light_min)/float((Light_max - Light_min))
 
-        s = np.array([SC_feed, Light_feed, curr_time_h_feed, Light_feed])
+        #s = np.array([SC_feed])
+
+        if len(diction_feat) == 1:
+            s = np.array([SC_feed])
+        elif len(diction_feat) == 2:
+            s = np.array([SC_feed, Light_feed])
+        else:
+            s = np.array([SC_feed, Light_feed, curr_time_h_feed])
+
+        #s = np.array([SC_feed, Light_feed, curr_time_h_feed, Light_feed])
         s_ = s
 
         #while curr_time < end_time: # here it's like the agent(BS) wakes up and sense the light and battery
@@ -273,7 +301,14 @@ class Environment:
                 done = True
 
             # Update s
-            s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed; s_[3] = Light_feed_next;
+            if len(diction_feat) == 1:
+                s_[0] = SC_feed_next
+            elif len(diction_feat) == 2:
+                s_[0] = SC_feed_next; s_[1] = Light_feed_next
+            else:
+                s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed_next; #s_[3] = curr_time_h;
+
+            #s_[0] = SC_feed_next; #s_[1] = Light_feed_next; s_[2] = curr_time_h_feed; s_[3] = Light_feed_next;
             #s_ = np.array([Light_feed, SC_feed])
             # End Environment, now the Agent Observe an Learn from it
 
@@ -302,11 +337,14 @@ class Environment:
             global Time_Best; global Light_Best; global cnt_Best; global SC_Best; global perf_Best; global Action_Best; global r_Best; global SC_Best_norm_hist; global SC_Feed_Best; global Light_Feed_Best; global Occup_Best
             Light_Best = Light_hist; Action_Best = Action_hist; r_Best = r_hist; cnt_Best = cnt_hist; best_reward = R; Time_Best = Time_hist
             perf_Best = perf_hist; SC_Best = SC_hist; SC_Best_norm_hist = SC_norm_hist; Perc_Best = Perc; Occup_Best = Occup_hist; Light_Feed_Best = Light_feed_hist; SC_Feed_Best = SC_feed_hist;
+            rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, episode)
+            rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
+            with open('Saved_Data/' + Text + '.pkl', 'w') as f:  # Python 3: open(..., 'wb')
+                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best], f)
 
-            '''
-            #Start Plotting
-            rp.plot_no_legend(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best)
-            '''
+        if episode % 100 == 0:
+            rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
+
 
 
 #-------------------- MAIN ----------------------------
@@ -323,7 +361,7 @@ best_reward = 0
 episode = 0
 
 printasfuck  = 0
-stateCnt = 4
+stateCnt = len(diction_feat)
 actionCnt = 3
 
 agent = Agent(stateCnt, actionCnt)

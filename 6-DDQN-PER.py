@@ -1,19 +1,20 @@
-# OpenGym CartPole-v0
+# OpenGym Seaquest-v0
 # -------------------
 #
-# This code demonstrates use a full DQN implementation
-# to solve OpenGym CartPole-v0 problem.
+# This code demonstrates a Double DQN network with Priority Experience Replay
+# in an OpenGym Seaquest-v0 environment.
 #
 # Made as part of blog series Let's make a DQN, available at:
-# https://jaromiru.com/2016/09/27/lets-make-a-dqn-theory/
+# https://jaromiru.com/2016/11/07/lets-make-a-dqn-double-learning-and-prioritized-experience-replay/
 #
 # author: Jaromir Janisch, 2016
 
-import random, numpy, math, sys
-from keras import backend as K
-import pickle
+import random, numpy, math, scipy
+from SumTree import SumTree
 
-import tensorflow as tf
+#IMAGE_WIDTH = 84
+#IMAGE_HEIGHT = 84
+#IMAGE_STACK = 2
 
 # My stuff
 import datetime
@@ -21,6 +22,7 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import Reward_Policies_Func as rp
+import pickle
 
 #Settings
 Start_Real_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
@@ -34,20 +36,20 @@ Perc_Best = 0;
 Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
 norm_light_min = 0; norm_light_max = 1
 Light_max = 10; Light_min = 0; Light_feed = 0.00
-# My stuff over
 
-MEMORY_CAPACITY = 100000  # It was 100000
+
+MEMORY_CAPACITY = 200000  # It was 100000
 MIN_EPSILON = 0.01 # Default 0.01
 tot_episodes = 100000;
 
 diction_feat = {0 : 'SC_feed', 1: 'Light_feed'}
 #diction_feat = {0 : 'SC_feed', 1: 'Light_feed', 2: 'Time'}
-diction = {"MEMORY_CAPACITY": 100000, 100000 : "10k", 200000: "2k"}
+diction = {"MEMORY_CAPACITY": 200000, 100000 : "10k", 200000: "20k"}
 
 MEMORY_CAPACITY = diction["MEMORY_CAPACITY"]
 
 #Text = "QSimpleNN(" + diction[0] + "-" + diction[1] + ")-Mem_" + diction[MEMORY_CAPACITY]
-Text = "DQN_MSE("
+Text = "DDQN_PER("
 for i in range(0,len(diction_feat)):
     if i < len(diction_feat)-1:
         Text = Text + diction_feat[i] + "_"
@@ -55,11 +57,13 @@ for i in range(0,len(diction_feat)):
         Text = Text + diction_feat[i]
 
 Text = Text + ")-Mem_" + diction[MEMORY_CAPACITY]
-#----------
-HUBER_LOSS_DELTA = 1.0
+
+# My stuff over
+
+HUBER_LOSS_DELTA = 2.0
 LEARNING_RATE = 0.00025
 
-#----------
+#-------------------- UTILITIES -----------------------
 def huber_loss(y_true, y_pred):
     err = y_true - y_pred
 
@@ -70,6 +74,17 @@ def huber_loss(y_true, y_pred):
     loss = tf.where(cond, L2, L1)   # Keras does not cover where function in tensorflow :-(
 
     return K.mean(loss)
+
+'''
+def processImage( img ):
+    rgb = scipy.misc.imresize(img, (IMAGE_WIDTH, IMAGE_HEIGHT), interp='bilinear')
+
+    r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
+    gray = 0.2989 * r + 0.5870 * g + 0.1140 * b     # extract luminance
+
+    o = gray.astype('float32') / 128 - 1    # normalize
+    return o
+'''
 
 #-------------------- BRAIN ---------------------------
 from keras.models import Sequential
@@ -82,22 +97,30 @@ class Brain:
         self.actionCnt = actionCnt
 
         self.model = self._createModel()
-        self.model_ = self._createModel()
+        self.model_ = self._createModel()  # target network
 
     def _createModel(self):
         model = Sequential()
 
-        model.add(Dense(units=64, activation='relu', input_dim=stateCnt))
+        #model.add(Conv2D(32, (8, 8), strides=(4,4), activation='relu', input_shape=(self.stateCnt), data_format='channels_first'))
+        #model.add(Conv2D(64, (4, 4), strides=(2,2), activation='relu'))
+        #model.add(Conv2D(64, (3, 3), activation='relu'))
+        #model.add(Flatten())
+
+        model.add(Dense(units=512, activation='relu', input_dim=stateCnt)) #Francesco it was 64
+        #model.add(Dense(units=actionCnt, activation='linear'))
+
+        #model.add(Dense(units=512, activation='relu'))
+
         model.add(Dense(units=actionCnt, activation='linear'))
 
         opt = RMSprop(lr=LEARNING_RATE)
-        #model.compile(loss=huber_loss, optimizer=opt) # Original
-        model.compile(loss='mse', optimizer=opt)
+        model.compile(loss=huber_loss, optimizer=opt)
 
         return model
 
     def train(self, x, y, epochs=1, verbose=0):
-        self.model.fit(x, y, batch_size=64, epochs=epochs, verbose=verbose)
+        self.model.fit(x, y, batch_size=32, epochs=epochs, verbose=verbose)
 
     def predict(self, s, target=False):
         if target:
@@ -106,42 +129,59 @@ class Brain:
             return self.model.predict(s)
 
     def predictOne(self, s, target=False):
+        #return self.predict(s.reshape(1, IMAGE_STACK, IMAGE_WIDTH, IMAGE_HEIGHT), target).flatten()
         return self.predict(s.reshape(1, self.stateCnt), target=target).flatten()
 
     def updateTargetModel(self):
         self.model_.set_weights(self.model.get_weights())
 
 #-------------------- MEMORY --------------------------
-class Memory:   # stored as ( s, a, r, s_ )
-    samples = []
+class Memory:   # stored as ( s, a, r, s_ ) in SumTree
+    e = 0.01
+    a = 0.6
 
     def __init__(self, capacity):
-        self.capacity = capacity
+        self.tree = SumTree(capacity)
 
-    def add(self, sample):
-        self.samples.append(sample)
+    def _getPriority(self, error):
+        return (error + self.e) ** self.a
 
-        if len(self.samples) > self.capacity:
-            self.samples.pop(0)
+    def add(self, error, sample):
+        p = self._getPriority(error)
+        self.tree.add(p, sample)
 
     def sample(self, n):
-        n = min(n, len(self.samples))
-        return random.sample(self.samples, n)
+        batch = []
+        segment = self.tree.total() / n
 
-    def isFull(self):
-        return len(self.samples) >= self.capacity
+        for i in range(n):
+            a = segment * i
+            b = segment * (i + 1)
+
+            s = random.uniform(a, b)
+            (idx, p, data) = self.tree.get(s)
+            batch.append( (idx, data) )
+
+        return batch
+
+    def update(self, idx, error):
+        p = self._getPriority(error)
+        self.tree.update(idx, p)
 
 #-------------------- AGENT ---------------------------
-#MEMORY_CAPACITY = 100000
-BATCH_SIZE = 64
+#MEMORY_CAPACITY = 200000
+
+BATCH_SIZE = 32
 
 GAMMA = 0.99
 
 MAX_EPSILON = 1
-#MIN_EPSILON = 0.01
-LAMBDA = 0.001      # speed of decay
+MIN_EPSILON = 0.1
 
-UPDATE_TARGET_FREQUENCY = 1000
+EXPLORATION_STOP = 500000   # at this step epsilon will be 0.01
+LAMBDA = - math.log(0.01) / EXPLORATION_STOP  # speed of decay
+
+UPDATE_TARGET_FREQUENCY = 10000
 
 class Agent:
     steps = 0
@@ -152,7 +192,7 @@ class Agent:
         self.actionCnt = actionCnt
 
         self.brain = Brain(stateCnt, actionCnt)
-        self.memory = Memory(MEMORY_CAPACITY)
+        # self.memory = Memory(MEMORY_CAPACITY)
 
     def act(self, s):
         if random.random() < self.epsilon:
@@ -161,57 +201,63 @@ class Agent:
             return numpy.argmax(self.brain.predictOne(s))
 
     def observe(self, sample):  # in (s, a, r, s_) format
-        self.memory.add(sample)
+        x, y, errors = self._getTargets([(0, sample)])
+        self.memory.add(errors[0], sample)
 
         if self.steps % UPDATE_TARGET_FREQUENCY == 0:
             self.brain.updateTargetModel()
 
-            '''
-        # debug the Q function in poin S
-        if self.steps % 100 == 0:
-            S = numpy.array([-0.01335408, -0.04600273, -0.00677248, 0.01517507]) # Original
-            #S = numpy.array([0, 0, 0, 0])
-            pred = agent.brain.predictOne(S)
-            print(pred[0])
-            sys.stdout.flush()
-        '''
         # slowly decrease Epsilon based on our eperience
         self.steps += 1
         self.epsilon = MIN_EPSILON + (MAX_EPSILON - MIN_EPSILON) * math.exp(-LAMBDA * self.steps)
 
-    def replay(self):
-        batch = self.memory.sample(BATCH_SIZE)
-        batchLen = len(batch)
-
+    def _getTargets(self, batch):
         no_state = numpy.zeros(self.stateCnt)
 
-        states = numpy.array([ o[0] for o in batch ])
-        states_ = numpy.array([ (no_state if o[3] is None else o[3]) for o in batch ])
+        states = numpy.array([ o[1][0] for o in batch ])
+        states_ = numpy.array([ (no_state if o[1][3] is None else o[1][3]) for o in batch ])
 
-        p = self.brain.predict(states)
-        p_ = self.brain.predict(states_, target=True)
+        p = agent.brain.predict(states)
 
-        x = numpy.zeros((batchLen, self.stateCnt))
-        y = numpy.zeros((batchLen, self.actionCnt))
+        p_ = agent.brain.predict(states_, target=False)
+        pTarget_ = agent.brain.predict(states_, target=True)
 
-        for i in range(batchLen):
-            o = batch[i]
+        #x = numpy.zeros((len(batch), IMAGE_STACK, IMAGE_WIDTH, IMAGE_HEIGHT))
+        x = numpy.zeros((len(batch), self.stateCnt))
+        y = numpy.zeros((len(batch), self.actionCnt))
+        errors = numpy.zeros(len(batch))
+
+        for i in range(len(batch)):
+            o = batch[i][1]
             s = o[0]; a = o[1]; r = o[2]; s_ = o[3]
 
             t = p[i]
+            oldVal = t[a]
             if s_ is None:
                 t[a] = r
             else:
-                t[a] = r + GAMMA * numpy.amax(p_[i])
+                t[a] = r + GAMMA * pTarget_[i][ numpy.argmax(p_[i]) ]  # double DQN
 
             x[i] = s
             y[i] = t
+            errors[i] = abs(oldVal - t[a])
+
+        return (x, y, errors)
+
+    def replay(self):
+        batch = self.memory.sample(BATCH_SIZE)
+        x, y, errors = self._getTargets(batch)
+
+        #update errors
+        for i in range(len(batch)):
+            idx = batch[i][0]
+            self.memory.update(idx, errors[i])
 
         self.brain.train(x, y)
 
-
 class RandomAgent:
     memory = Memory(MEMORY_CAPACITY)
+    exp = 0
 
     def __init__(self, actionCnt):
         self.actionCnt = actionCnt
@@ -220,7 +266,9 @@ class RandomAgent:
         return random.randint(0, self.actionCnt-1)
 
     def observe(self, sample):  # in (s, a, r, s_) format
-        self.memory.add(sample)
+        error = abs(sample[2])  # reward
+        self.memory.add(error, sample)
+        self.exp += 1
 
     def replay(self):
         pass
@@ -232,6 +280,8 @@ class Environment:
     #    self.env = gym.make(problem)
 
     def run(self, agent):
+        #img = self.env.reset()
+        #w = processImage(img)
         # Initiallization
         global Perc_Best; global best_reward
         global episode; global Tot_Episodes
@@ -251,7 +301,8 @@ class Environment:
         # Normalize all parameters from 0 to 1 before feeding the RL
         Light_feed = (Light - Light_min)/float((Light_max - Light_min))
 
-        #s = np.array([SC_feed, SC_feed, curr_time_h_feed, Light_feed])
+        #s = np.array([SC_feed])
+
         if len(diction_feat) == 1:
             s = np.array([SC_feed])
         elif len(diction_feat) == 2:
@@ -259,10 +310,19 @@ class Environment:
         else:
             s = np.array([SC_feed, Light_feed, curr_time_h_feed])
 
+        #s = np.array([SC_feed, Light_feed, curr_time_h_feed, Light_feed])
         s_ = s
 
-        #while curr_time < end_time: # here it's like the agent(BS) wakes up and sense the light and battery
-        while True: # here it's like the agent(BS) wakes up and sense the light and battery
+        #s = numpy.array([w, w])
+
+
+        while True:
+            # self.env.render()
+            #a = agent.act(s)
+
+            #r = 0
+            #img, r, done, info = self.env.step(a)
+            #s_ = numpy.array([s[1], processImage(img)]) #last two screens
 
             # First the agent (BS) takes an action (i.e. telling Pible to send data or not to send)
             action = agent.act(s) # The BS tells Pible to increase perf with 1 while 0 is decrease perf
@@ -296,9 +356,6 @@ class Environment:
                 done = True
 
             # Update s
-            #s_[0] = SC_feed_next; s_[1] = SC_feed_next; s_[2] = curr_time_h_feed_next; s_[3] = Light_feed_next;
-
-            # Update s
             if len(diction_feat) == 1:
                 s_[0] = SC_feed_next
             elif len(diction_feat) == 2:
@@ -306,8 +363,11 @@ class Environment:
             else:
                 s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed_next; #s_[3] = curr_time_h;
 
+            #s_[0] = SC_feed_next; #s_[1] = Light_feed_next; s_[2] = curr_time_h_feed; s_[3] = Light_feed_next;
             #s_ = np.array([Light_feed, SC_feed])
             # End Environment, now the Agent Observe an Learn from it
+
+            reward = np.clip(reward, -1, 1)   # clip reward to [-1, 1]
 
             if done: # terminal state
                 s_ = None
@@ -344,35 +404,43 @@ class Environment:
 
 
 #-------------------- MAIN ----------------------------
-#PROBLEM = 'CartPole-v0'
+#PROBLEM = 'Seaquest-v0'
 #env = Environment(PROBLEM)
 env = Environment()
 
-#stateCnt  = env.env.observation_space.shape[0]
-#actionCnt = env.env.action_space.n
 global Time_Best; global Light_Best; global cnt_Best; global SC_Best; global perf_Best; global Action_Best; global r_Best; global SC_Best_norm_hist; global SC_Feed_Best; global Light_Feed_Best; global Occup_Best; global Tot_Reward; global Tot_Episodes;
 global episode; global best_reward
 Light_Best = []; SC_Best = []; perf_Best = []; Time_Best = []; Action_Best = []; r_Best = []; cnt_Best = []; SC_Best_norm_hist = []; SC_Feed_Best = []; Light_Feed_Best = []; Occup_Best = []; Tot_Reward = []; Tot_Episodes = []
 best_reward = 0
 episode = 0
 
-printasfuck  = 0
+#stateCnt  = (IMAGE_STACK, IMAGE_WIDTH, IMAGE_HEIGHT)
 stateCnt = len(diction_feat)
+#actionCnt = env.env.action_space.n
 actionCnt = 3
+
+#print(stateCnt)
+#print(actionCnt)
 
 agent = Agent(stateCnt, actionCnt)
 randomAgent = RandomAgent(actionCnt)
 
-
-while randomAgent.memory.isFull() == False:
+#try:
+print("Initialization with random agent...")
+while randomAgent.exp < MEMORY_CAPACITY:
     env.run(randomAgent)
+    print(randomAgent.exp, "/", MEMORY_CAPACITY)
 
-agent.memory.samples = randomAgent.memory.samples
+agent.memory = randomAgent.memory
+
 randomAgent = None
-printasfuck = 1
-for i in range(0,tot_episodes):
+
+print("Starting learning")
+while True:
     env.run(agent)
     episode += 1
+#finally:
+#    agent.brain.model.save("Seaquest-DQN-PER.h5")
 
 #Start Plotting
 print("Best Lenght", len(Time_Best))

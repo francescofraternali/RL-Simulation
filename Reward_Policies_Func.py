@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
-I_sleep = 0.0000015; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
+I_sleep = 0.0000025; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
 V_Solar_200lux = 1.5; I_Solar_200lux = 0.000031   # It was 1.5
 SC_Volt_min = 2.1; SC_Volt_max = 5.5; SC_size = 1.5
 on_off = 0 # 0 is off and it uses 10 light levels. With 1 light is just on or off
@@ -136,19 +136,20 @@ def calc_energy_prod_consu(time_temp, SC_temp, Light):
 def plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, tot_episodes):
     #Start Plotting
     fig, ax = plt.subplots(1)
-    fig.autofmt_xdate()
+    #fig.autofmt_xdate()
     plt.plot(Tot_Episodes, Tot_Reward, 'r', label = 'Total Reward')
     #xfmt = mdates.DateFormatter('%m-%d-%y %H:%M:%S')
     #ax.xaxis.set_major_formatter(xfmt)
     ax.tick_params(axis='both', which='major', labelsize=10)
     legend = ax.legend(loc='center right', shadow=True)
     plt.legend(loc=9, prop={'size': 10})
-    plt.title('Reward Result - ' + Text + 'Best_R: ' + str(best_reward) + 'Epis: ' + str(tot_episodes), fontsize=15)
+    plt.title('Reward Trend - ' + Text + ', Best_R: ' + str(best_reward) + ', Epis: ' + str(tot_episodes), fontsize=15)
     plt.ylabel('Total Reward [num]', fontsize=15)
     plt.xlabel('Episode [num]', fontsize=20)
     ax.grid(True)
-    fig.savefig('/mnt/c/Users/Francesco/Desktop/Dropbox/EH/RL/RL_MY/Images-Auto/Reward_' + Text + '.png', bbox_inches='tight')
-    plt.show()
+    fig.savefig('/mnt/c/Users/Francesco/Dropbox/EH/RL/RL_MY/Images-Auto/Reward_' + Text + '.png', bbox_inches='tight')
+    #plt.show()
+    plt.close(fig)
 
 def plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, tot_episodes):
     #Start Plotting
@@ -169,9 +170,10 @@ def plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best
     ax.tick_params(axis='both', which='major', labelsize=10)
     legend = ax.legend(loc='center right', shadow=True)
     plt.legend(loc=9, prop={'size': 10})
-    plt.title('Best Experimental Result - ' + Text + 'Best_R: ' + str(best_reward) + 'Epis: ' + str(tot_episodes), fontsize=15)
+    plt.title(Text + ', Best_R: ' + str(best_reward) + ', Epis: ' + str(tot_episodes), fontsize=15)
     plt.ylabel('Super Capacitor Voltage[V]', fontsize=15)
     plt.xlabel('Time[h]', fontsize=20)
     ax.grid(True)
-    fig.savefig('/mnt/c/Users/Francesco/Desktop/Dropbox/EH/RL/RL_MY/Images-Auto/' + Text + '.png', bbox_inches='tight')
-    plt.show()
+    fig.savefig('/mnt/c/Users/Francesco/Dropbox/EH/RL/RL_MY/Images-Auto/' + Text + '.png', bbox_inches='tight')
+    #plt.show()
+    plt.close(fig)
