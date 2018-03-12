@@ -31,35 +31,38 @@ import Reward_Policies_Func as rp
 #Settings
 Start_Real_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
 Starting_time = datetime.datetime(2018,1,1,12,00,00)
-Ending_time = datetime.datetime(2018,1,4,7,00,00)
+Ending_time = datetime.datetime(2018,1,4,12,00,00)
 
 Init_SC_Volt = 3.5; SC_norm_max = 10; SC_norm_min = 1
 
 reset = 60*60*24; cnt_max = 10000
-best_reward = 0; Perc_Best = 0 ; episode = 0
+best_reward = 0; Perc_Best = 0 ; episode = 0; save_rev_rate = 1000
 norm_light_min = 0; norm_light_max = 1;
 Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
 Light_max = 10; Light_min = 0; Light_feed = 0.00
-SampleSam =[];
 #s = np.array([SC_feed, Light_feed, curr_time_h_feed])
 #s_origianl[0] = SC_feed_next; s_original[1] = Light_feed_next; s_original[2] = curr_time_h_feed_next;
 #MEMORY_CAPACITY = 0  # It was 100000
 MIN_EPSILON = 0.01 # Default 0.01
 tot_episodes = 100000;
 
-diction_feat = {0 : 'SC_feed', 1: 'Light_feed'}
-#diction_feat = {0 : 'SC_feed', 1: 'Light_feed', 2: 'Time'}
+global diction_feat
+diction_feat = {0: 'SC_feed', 1: 'Light_feed'}
+#diction_feat = {SC_feed: 0}
+#print "Value : %d" %  diction_feat.get(SC_feed)
+
 diction = {"MEMORY_CAPACITY": 100000, 100000 : "10k", 200000: "2k"}
 
 MEMORY_CAPACITY = diction["MEMORY_CAPACITY"]
 
 #Text = "QSimpleNN(" + diction[0] + "-" + diction[1] + ")-Mem_" + diction[MEMORY_CAPACITY]
-Text = "QSimpleNN("
+
+Text = "2-QSimpleNN_EndT("
 for i in range(0,len(diction_feat)):
     if i < len(diction_feat)-1:
-        Text = Text + diction_feat[i] + "_"
+        Text = Text + str(diction_feat[i]) + "_"
     else:
-        Text = Text + diction_feat[i]
+        Text = Text + str(diction_feat[i])
 
 Text = Text + ")-Mem_" + diction[MEMORY_CAPACITY]
 
@@ -76,9 +79,11 @@ class Brain: # It encapsulate the neural network. predict(s) predicts the Q func
     def _createModel(self):    # here we have the definition of the Neural Network with Keras Library
         model = Sequential()
 
-        #model.add(Dense(output_dim=64, activation='relu', input_dim=stateCnt))
-        model.add(Dense(output_dim=64, activation='relu', input_dim=stateCnt))
-        model.add(Dense(output_dim=actionCnt, activation='linear'))
+
+        #model.add(Dense(output_dim=64, activation='relu', input_dim=stateCnt))  #Original
+        #model.add(Dense(output_dim=actionCnt, activation='linear'))     #Original
+        model.add(Dense(units=64, activation='relu', input_dim=stateCnt))
+        model.add(Dense(units=actionCnt, activation='linear'))
 
         opt = RMSprop(lr=0.00025)
         model.compile(loss='mse', optimizer=opt)
@@ -194,6 +199,7 @@ class Environment:
     def run(self, agent):
 
         # Initiallization
+        global diction_feat
         start_time = Starting_time
         curr_time = start_time
         curr_time_next = curr_time
@@ -204,11 +210,13 @@ class Environment:
         #Light_sec = 8*60*60 # 8 hour
         Light = 10; Perc = 0; cnt = 0; perf = 8; time_temp = 4; reward = 0; R = 0; done = False; Occupancy = 0
         SC_temp = Init_SC_Volt
+        #global SC_feed
         SC_temp, SC_norm, SC_feed = rp.calc_energy_prod_consu(time_temp, SC_temp, Light)
         cnt_hist = []; Light_hist = []; Action_hist = []; r_hist = []; Time_hist = []; perf_hist = []; SC_hist = []; SC_norm_hist = []; Occup_hist = []; Light_feed_hist = []; SC_feed_hist = [];
 
         # Normalize all parameters from 0 to 1 before feeding the RL
         Light_feed = (Light - Light_min)/float((Light_max - Light_min))
+
 
         if len(diction_feat) == 1:
             s = np.array([SC_feed])
@@ -250,18 +258,22 @@ class Environment:
             #reward += 1
             R += reward
 
-            if cnt >= cnt_max:
+            #if cnt >= cnt_max:
+            if curr_time >= end_time:
                 done = True
 
             # Update s
             #for i in range(len(s_original)):
             #    s_[i] = s_original[i]
+
             if len(diction_feat) == 1:
                 s_[0] = SC_feed_next
             elif len(diction_feat) == 2:
                 s_[0] = SC_feed_next; s_[1] = Light_feed_next
             else:
                 s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed_next; #s_[3] = curr_time_h;
+
+
 
             #s_[0] = SC_feed_next; s_[1] = Light_feed_next; s_[2] = curr_time_h_feed_next; #s_[3] = curr_time_h;
             #s_ = np.array([Light_feed, SC_feed])
@@ -296,12 +308,13 @@ class Environment:
         if R > best_reward:
             Light_Best = Light_hist; Action_Best = Action_hist; r_Best = r_hist; cnt_Best = cnt_hist; best_reward = R; Time_Best = Time_hist
             perf_Best = perf_hist; SC_Best = SC_hist; SC_Best_norm_hist = SC_norm_hist; Perc_Best = Perc; Occup_Best = Occup_hist; Light_Feed_Best = Light_feed_hist; SC_Feed_Best = SC_feed_hist
+
             rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, episode)
             rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
             with open('Saved_Data/' + Text + '.pkl', 'w') as f:  # Python 3: open(..., 'wb')
-                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best], f)
+                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best, Tot_Episodes, Tot_Reward, Text, episode], f)
 
-        if episode % 100 == 0:
+        if episode % save_rev_rate == 0:
             rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
 
         episode += 1

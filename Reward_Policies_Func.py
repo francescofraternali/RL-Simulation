@@ -6,72 +6,95 @@ import numpy as np
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
-I_sleep = 0.0000025; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
-V_Solar_200lux = 1.5; I_Solar_200lux = 0.000031   # It was 1.5
-SC_Volt_min = 2.1; SC_Volt_max = 5.5; SC_size = 1.5
+I_sleep = 0.0000035; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
+V_Solar_200lux = 1*100; I_Solar_200lux = 0.000011*10   # It was 1.5
+SC_Volt_min = 2.1; SC_Volt_max = 5.5; SC_size = 1
 on_off = 0 # 0 is off and it uses 10 light levels. With 1 light is just on or off
 Light_max = 10; Light_min = 0
 
 def simple_light_rew(action, Light, perf):
-    if action == 1 and Light > 0:
+    if action == 2 and Light > 0:
         reward = 1; perf += 1
     elif action == 0 and Light == 0:
         reward = 1; perf -= 1
     else:
         reward = 0
 
+    perf = 7
+
     return reward, perf
 
-def simple_barath_sending_and_dying_rew(action, SC_norm, perf, SC_norm_min): # not finished yet
+def simple_SC_rew(action, SC_norm, perf):
+    if action == 2 and Light > 0:
+        reward = 1; perf += 1
+    elif action == 0 and Light == 0:
+        reward = 1; perf -= 1
+    else:
+        reward = 0
 
-    if action == 2:
-        perf += 1;
-    if action == 1:
-        perf += 0
-    if action == 0:
-        perf -= 1
+    perf = 7
 
-    if perf > 10:
-    	perf = 10
+    return reward, perf
+
+def simple_barath_sending_and_dying_rew(action, tot_action, SC_norm, perf, SC_norm_min): # not finished yet
+
+    if tot_action == 3:
+        if action == 2:
+            perf += 1;
+        if action == 1:
+            perf += 0
+        if action == 0:
+            perf -= 1
+    elif tot_action == 2:
+        if action == 1:
+            perf += 1
+        if action == 0:
+            perf -= 1
+    else:
+        print("Error")
+        exit()
+
+    if perf > 4:
+    	perf = 4
     if perf < 1:
     	perf = 1
 
     reward = perf
 
     if SC_norm <= SC_norm_min:
-        reward = - 3000
+        reward = - 30000
 
     return reward, perf
 
 def adjust_perf(perf):
 
-    if perf > 10:
-    	perf = 10
+    if perf > 4:
+    	perf = 4
     if perf < 1:
     	perf = 1
 
     if perf == 10:
-        time_temp = 10
+        time_temp = 60
     elif perf == 9:
-        time_temp = 20
-    elif perf == 8:
-        time_temp = 40
-    elif perf == 7:
-         time_temp = 60
-    elif perf == 6:
         time_temp = 120
+    elif perf == 8:
+        time_temp = 240
+    elif perf == 7:
+         time_temp = 300
+    elif perf == 6:
+        time_temp = 420
     elif perf == 5:
-        time_temp = 300
-    elif perf == 4:
         time_temp = 600
-    elif perf == 3:
-        time_temp = 1800
-    elif perf == 2:
+    elif perf == 4:
         time_temp = 3600
+    elif perf == 3:
+        time_temp = 3600 * 2
+    elif perf == 2:
+        time_temp = 3600 * 3
     elif perf == 1:
-        time_temp = 7200
+        time_temp = 3600 * 4
     else:
-        time_temp = 7200
+        time_temp = 3600 * 4
 
     return perf, time_temp
 
@@ -111,13 +134,17 @@ def calc_light_occup(curr_time_h):
 
 def calc_energy_prod_consu(time_temp, SC_temp, Light):
 
+    SC_energy = SC_temp*SC_temp * 0.5 * SC_size
     Energy_Used = ((time_temp - Time_BLE_Sens_1) * SC_temp * I_sleep) + (Time_BLE_Sens_1 * SC_temp * I_BLE_Sens_1)
     #Volt_Used = round(np.sqrt((2*Energy_Used)/SC_size),2)
     Volt_Used = np.sqrt((2*Energy_Used)/SC_size)
     Energy_Prod = time_temp * V_Solar_200lux * I_Solar_200lux * Light
     #Volt_Prod = round(np.sqrt((2*Energy_Prod)/SC_size),2)
     Volt_Prod = np.sqrt((2*Energy_Prod)/SC_size)
+    #print("SC_temp_old, time_temp, Volt_Prod, Volt_Used", SC_temp, time_temp, Volt_Prod, Volt_Used)
     SC_temp = SC_temp + Volt_Prod - Volt_Used
+    #print("SC_temp_final", SC_temp)
+
     if SC_temp > SC_Volt_max:
         SC_temp = SC_Volt_max
 
@@ -147,7 +174,8 @@ def plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, tot_episodes):
     plt.ylabel('Total Reward [num]', fontsize=15)
     plt.xlabel('Episode [num]', fontsize=20)
     ax.grid(True)
-    fig.savefig('/mnt/c/Users/Francesco/Dropbox/EH/RL/RL_MY/Images-Auto/Reward_' + Text + '.png', bbox_inches='tight')
+    #fig.savefig('/mnt/c/Users/Francesco/Dropbox/EH/RL/RL_MY/Images-Auto/Reward_' + Text + '.png', bbox_inches='tight')
+    fig.savefig('Images-Auto/Reward_' + Text + '.png', bbox_inches='tight')
     #plt.show()
     plt.close(fig)
 
@@ -174,6 +202,28 @@ def plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best
     plt.ylabel('Super Capacitor Voltage[V]', fontsize=15)
     plt.xlabel('Time[h]', fontsize=20)
     ax.grid(True)
-    fig.savefig('/mnt/c/Users/Francesco/Dropbox/EH/RL/RL_MY/Images-Auto/' + Text + '.png', bbox_inches='tight')
+    fig.savefig('Images-Auto/' + Text + '.png', bbox_inches='tight')
     #plt.show()
     plt.close(fig)
+
+
+def checker(tc, SC_norm, SC_feed, SC_temp, SC_real, Light, Light_feed, curr_time_h, curr_time_m):
+    if tc == "SC_norm":
+        return SC_norm
+    elif tc == "Light":
+        return Light
+    elif tc == "curr_time_h":
+        return curr_time_h
+    elif tc == "SC_temp":
+        return SC_temp
+    elif tc == "SC_real":
+        return SC_real
+    elif tc == "SC_feed":
+        return SC_feed
+    elif tc == "Light_feed":
+        return Light_feed
+    elif tc == "curr_time_m":
+        return curr_time_m
+    else:
+        print("Checher Error")
+        return "error"

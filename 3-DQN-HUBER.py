@@ -25,12 +25,12 @@ import Reward_Policies_Func as rp
 #Settings
 Start_Real_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
 Starting_time = datetime.datetime(2018,1,1,12,00,00)
-Ending_time = datetime.datetime(2018,1,4,7,00,00)
+Ending_time = datetime.datetime(2018,1,4,12,00,00)
 
 Init_SC_Volt = 3.5; SC_norm_max = 10; SC_norm_min = 1
 
 reset = 60*60*24; cnt_max = 10000
-Perc_Best = 0;
+Perc_Best = 0; save_rev_rate = 1000
 Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
 norm_light_min = 0; norm_light_max = 1
 Light_max = 10; Light_min = 0; Light_feed = 0.00
@@ -47,7 +47,7 @@ diction = {"MEMORY_CAPACITY": 100000, 100000 : "10k", 200000: "2k"}
 MEMORY_CAPACITY = diction["MEMORY_CAPACITY"]
 
 #Text = "QSimpleNN(" + diction[0] + "-" + diction[1] + ")-Mem_" + diction[MEMORY_CAPACITY]
-Text = "DQN_HUBER("
+Text = "3-DQN_HUBER_EndT("
 for i in range(0,len(diction_feat)):
     if i < len(diction_feat)-1:
         Text = Text + diction_feat[i] + "_"
@@ -297,7 +297,8 @@ class Environment:
             #reward += 1
             R += reward
 
-            if cnt >= cnt_max:
+            #if cnt >= cnt_max:
+            if curr_time >= end_time:
                 done = True
 
             # Update s
@@ -340,9 +341,9 @@ class Environment:
             rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, episode)
             rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
             with open('Saved_Data/' + Text + '.pkl', 'w') as f:  # Python 3: open(..., 'wb')
-                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best], f)
+                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best, Tot_Episodes, Tot_Reward, Text, episode], f)
 
-        if episode % 100 == 0:
+        if episode % save_rev_rate == 0:
             rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
 
 
