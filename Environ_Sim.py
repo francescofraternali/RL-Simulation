@@ -4,7 +4,7 @@ import time
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-I_sleep = 0.0000045; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
+I_sleep = 0.0000035; I_BLE_Sens_1 = 0.000199; Time_BLE_Sens_1 = 3
 V_Solar_200lux = 1; I_Solar_200lux = 0.000011   # It was 1.5
 SC_Volt_min = 2.1; SC_Volt_max = 5.5; SC_size = 1
 

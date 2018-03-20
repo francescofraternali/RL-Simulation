@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import time
 import matplotlib.pyplot as plt
 
 
@@ -27,17 +28,46 @@ class QLearningTable:
             action = np.random.choice(self.actions)
         return action
 
-    def learn(self, s, a, r, s_):
+    def learn(self, s, a, r, s_, Text, tot_action, granul):
+        self.check_state_exist(s)
         self.check_state_exist(s_)
+        #if type(s) == str:
+        #    print "fuck"
+        #    quit()
         q_predict = self.q_table.loc[s, a]
-        #print s,a, q_predict
+
+        #print ("s, a, q_predict: " + str(s) + ", " + str(a) + ", " + str(q_predict))
         if s_ != 'terminal':
             q_target = r + self.gamma * self.q_table.loc[s_, :].max()  # next state is not terminal
+            #print ("Q_target: " + str(q_target))
         else:
             q_target = r  # next state is terminal
         self.q_table.loc[s, a] += self.lr * (q_target - q_predict)  # update
+        #print self.q_table.index
+        #print self.q_table.columns
+        #time.sleep(2)
+        #total = []
+        #if self.steps % 100000== 0:
+            #print self.q_table.index
+            #print str(self.q_table)
+            #time.sleep(20)
+            #quit()
+            #print 'cazzo lungo'
+            #print len(self.q_table.index)
+            #for i in range(0, len(self.q_table.index)):
+            #    total.append(int(self.q_table.index[i]))
+            #print self.q_table.columns
+            #print "Final Table"
+            #for i in range(0, len(self.q_table.index)):
+            #    for ii in range(0,  self.q_table.columns):
+            #            print ("s, a, q_predict: " + str(i) + ", " + str(ii) + ", " + str(int(round(self.q_table.loc[str(i), ii]))))
+            #exit()
+
+        #print("Finished printing")
+
+
         self.steps += 1
-        if self.steps % 10000 == 0:
+        if self.steps % 100000 == 0:
                 row, column = self.q_table.shape
                 print row
                 print column
@@ -55,11 +85,11 @@ class QLearningTable:
                 ax.tick_params(axis='both', which='major', labelsize=10)
                 #legend = ax.legend(loc='center right', shadow=True)
                 #plt.legend(loc=9, prop={'size': 10})
-                plt.title('Q function mean for 3 actions', fontsize=15)
+                plt.title('Q function mean' + str(Text) + '-St-' + str(row), fontsize=15)
                 plt.ylabel('Q predict', fontsize=15)
                 plt.xlabel('steps', fontsize=20)
                 ax.grid(True)
-                fig.savefig('Images-Auto/Qfunc_Qtable.png', bbox_inches='tight')
+                fig.savefig('Images-Auto/QF_' + str(Text) + '.png', bbox_inches='tight')
                 #plt.show()
                 plt.close(fig)
                 #if self.steps/10000 == 1000:
@@ -68,7 +98,7 @@ class QLearningTable:
     def check_state_exist(self, state):
         if state not in self.q_table.index:
             # append new state to q table
-            print state
+            print ("New State: " + str(state))
             self.q_table = self.q_table.append(
                 pd.Series(
                     [0]*len(self.actions),

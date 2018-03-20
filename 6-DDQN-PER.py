@@ -17,46 +17,43 @@ from SumTree import SumTree
 #IMAGE_STACK = 2
 
 # My stuff
-import datetime
-import time
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import Reward_Policies_Func as rp
-import pickle
+from Reward_Policies_Func import Env_Rew_Pol
 
-#Settings
-Start_Real_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
-Starting_time = datetime.datetime(2018,1,1,12,00,00)
-Ending_time = datetime.datetime(2018,1,4,12,00,00)
-
-Init_SC_Volt = 3.5; SC_norm_max = 10; SC_norm_min = 1
-
-reset = 60*60*24; cnt_max = 10000
-Perc_Best = 0; save_rev_rate = 5000
-Time_h_min = 0; Time_h_max = 24; curr_time_h_feed = 0.00; curr_time_h_feed_next = 0.00
-norm_light_min = 0; norm_light_max = 1
-Light_max = 10; Light_min = 0; Light_feed = 0.00
-
-
-MEMORY_CAPACITY = 200000  # It was 100000
-MIN_EPSILON = 0.01 # Default 0.01
+MEMORY_CAPACITY = 1000000  # It was 200000
+MIN_EPSILON = 0.1 # Default 0.01
 tot_episodes = 500000; tot_action = 3
 
-diction_feat = {0 : 'curr_time_h', 1: 'Light'}
+granularity = "1min" # see option above
+if granularity == "1min":
+    granul = [3600, 1800, 600, 60]
+elif granularity == "5min":
+    granul = [3600, 1800, 1200, 600, 300]
+elif granularity == "10min":
+    granul = [7200, 3600, 1800, 1200, 600]
+elif granularity == "30min":
+    granul = [9000, 7200, 5400, 3600, 1800]
+elif granularity == "1h":
+    granul = [14400, 10800, 7200, 3600]
+else:
+    print("Granularity Error")
+    exit()
+
+diction_feat = {0 : 'curr_time_h', 1 : 'curr_time_m',  2: 'Light', 3: 'SC_norm'}
 #diction_feat = {0 : 'SC_feed', 1: 'Light_feed', 2: 'Time'}
-diction = {"MEMORY_CAPACITY": 200000, 100000 : "10k", 200000: "20k"}
+diction = {"MEMORY_CAPACITY": 200000, 100000 : "10k", 200000: "20k", 500000: "50k", 1000000: "1M"}
 
 MEMORY_CAPACITY = diction["MEMORY_CAPACITY"]
 
 #Text = "QSimpleNN(" + diction[0] + "-" + diction[1] + ")-Mem_" + diction[MEMORY_CAPACITY]
-Text = "6-DDQN_PER_TL_NE("
+Text = "6-DDQN_PER_N("
 for i in range(0,len(diction_feat)):
     if i < len(diction_feat)-1:
         Text = Text + diction_feat[i] + "_"
     else:
         Text = Text + diction_feat[i]
 
-Text = Text + ")-Mem_" + diction[MEMORY_CAPACITY] + "-Act" + str(tot_action)
+Text = Text + ")-Rew30M-" + str(tot_action) + "-" + granularity
+Text = Text + ")-Mem_" + diction[MEMORY_CAPACITY]
 
 # My stuff over
 
@@ -280,158 +277,35 @@ class Environment:
     #    self.env = gym.make(problem)
 
     def run(self, agent):
-        #img = self.env.reset()
-        #w = processImage(img)
-        # Initiallization
-        global Perc_Best; global best_reward
-        global episode; global Tot_Episodes
-        start_time = Starting_time
-        curr_time = start_time
-        curr_time_next = curr_time
-        end_time = Ending_time
-        curr_time_h = curr_time.hour
-        curr_time_h_feed = (curr_time_h - Time_h_min)/float((Time_h_max - Time_h_min))
-        curr_time_h_feed = round(curr_time_h_feed,2)
-        #Light_sec = 8*60*60 # 8 hour
-        Light = 10; Perc = 0; cnt = 0; perf = 8; time_temp = 4; reward = 0; R = 0; done = False; Occupancy = 0
-        SC_temp = Init_SC_Volt
-        SC_real = Init_SC_Volt
-        SC_temp, SC_norm, SC_feed = rp.calc_energy_prod_consu(time_temp, SC_temp, Light)
-        SC_real = round(SC_temp,1)
-        cnt_hist = []; Light_hist = []; Action_hist = []; r_hist = []; Time_hist = []; perf_hist = []; SC_hist = []; SC_norm_hist = []; Occup_hist = []; Light_feed_hist = []; SC_feed_hist = []; Tot_Rew_hist = []
 
-        # Normalize all parameters from 0 to 1 before feeding the RL
-        Light_feed = (Light - Light_min)/float((Light_max - Light_min))
+        Environ = Env_Rew_Pol()
+        for episode in range(tot_episodes):
+            # initial observation
+            s, s_ = Environ.Init(diction_feat, granul)
+            #s_ = s
 
-        #s = np.array([SC_feed])
+            #while curr_time < end_time: # here it's like the agent(BS) wakes up and sense the light and battery
+            while True: # here it's like the agent(BS) wakes up and sense the light and battery
 
-        stuff = []
-        for i in range(len(diction_feat)):
-            tocheck = diction_feat[i]
-            feature = rp.checker(tocheck, SC_norm, SC_feed, SC_temp, SC_real, Light, Light_feed, curr_time_h)
-            stuff.append(feature)
+                # First the agent (BS) takes an action (i.e. telling Pible to send data or not to send)
+                action = agent.act(s) # The BS tells Pible to increase perf with 1 while 0 is decrease perf
 
-        if len(diction_feat) == 1:
-            s = np.array([stuff[0]]); s_ = np.array([stuff[0]])
-        elif len(diction_feat) == 2:
-            s = np.array([stuff[0], stuff[1]]); s_ = np.array([stuff[0], stuff[1]])
-        elif len(diction_feat) == 3:
-            s = np.array([stuff[0], stuff[1], stuff[2]]); s_ = np.array([stuff[0], stuff[1], stuff[2]])
-        elif len(diction_feat) == 4:
-            s = np.array([stuff[0], stuff[1], stuff[2], stuff[3]]); s_ = np.array([stuff[0], stuff[1], stuff[2], stuff[3]])
-        else:
-            print("Dictionary Feature Error")
-            exit()
+                reward, done, s_ = Environ.Envi(action, tot_action, diction_feat, granul, s_)
 
-        #s = np.array([SC_feed, Light_feed, curr_time_h_feed, Light_feed])
-        #s_ = s
+                agent.observe( (s, action, reward, s_) )
+                agent.replay()
 
-        #s = numpy.array([w, w])
+                s = Environ.Update_s(action, diction_feat, s)
+                # break while loop when end of this episode
+                if done:
+                    break
 
-
-        while True:
-            # self.env.render()
-            #a = agent.act(s)
-
-            #r = 0
-            #img, r, done, info = self.env.step(a)
-            #s_ = numpy.array([s[1], processImage(img)]) #last two screens
-
-            # First the agent (BS) takes an action (i.e. telling Pible to send data or not to send)
-            action = agent.act(s) # The BS tells Pible to increase perf with 1 while 0 is decrease perf
-
-            #Reward Based on Action and Environment
-            #reward, perf = rp.simple_light_rew(action, Light, perf)
-            reward, perf_next = rp.simple_barath_sending_and_dying_rew(action, tot_action, SC_norm, perf, SC_norm_min)
-            #reward, perf = rp.all_rew(action, Light, SC_norm, SC_norm_old, perf, curr_time_h, Occupancy)
-
-            # Adjust Performance and Time
-            perf_next, time_temp = rp.adjust_perf(perf_next)
-            #time_temp = 600
-            # Adjust Environment Time
-            curr_time_next = curr_time + datetime.timedelta(0,time_temp)
-            curr_time_h_next = curr_time_next.hour
-            curr_time_h_feed_next = (curr_time_h_next - Time_h_min)/float((Time_h_max - Time_h_min))
-            curr_time_h_feed_next = round(curr_time_h_feed_next,2)
-            # Environment starts here
-            # Environment changes based on the action taken, here here I Calculate Next Light intensity and Occupancy
-            Light_next, Occupancy_next, Light_feed_next = rp.calc_light_occup(curr_time_h)
-
-            # Calculate Energy Produced and Consumed Based on the action taken
-            SC_temp_next, SC_norm_next, SC_feed_next = rp.calc_energy_prod_consu(time_temp, SC_temp, Light)
-            SC_real_next = round(SC_temp_next,1)
-
-
-            cnt += 1;
-            #reward += 1
-            R += reward
-
-            #if cnt >= cnt_max:
-            if curr_time >= end_time:
-                done = True
-
-            # Update s
-            for i in range(len(diction_feat)):
-                tocheck = diction_feat[i]
-                feature = rp.checker(tocheck, SC_norm_next, SC_feed_next, SC_temp_next, SC_real_next, Light_next, Light_feed_next, curr_time_h_next)
-                s_[i] = feature
-
-            #s_[0] = SC_feed_next; #s_[1] = Light_feed_next; s_[2] = curr_time_h_feed; s_[3] = Light_feed_next;
-            #s_ = np.array([Light_feed, SC_feed])
-            # End Environment, now the Agent Observe an Learn from it
-
-            #reward = np.clip(reward, -1, 1)   # clip reward to [-1, 1]
-
-            if done: # terminal state
-                s_ = None
-
-            agent.observe( (s, action, reward, s_) )
-            agent.replay()
-
-            # Append Data
-            Light_hist.append(Light); Action_hist.append(action); cnt_hist.append(cnt); r_hist.append(reward); Time_hist.append(curr_time); perf_hist.append(perf); SC_hist.append(SC_temp); SC_norm_hist.append(SC_norm); Occup_hist.append(Occupancy); Light_feed_hist.append(Light_feed); SC_feed_hist.append(SC_feed);
-
-            # Swap observation
-            for i in range(len(diction_feat)):
-                tocheck = diction_feat[i]
-                feature = rp.checker(tocheck, SC_norm_next, SC_feed_next, SC_temp_next, SC_real_next, Light_next, Light_feed_next, curr_time_h_next)
-                s[i] = feature
-            #s = s_
-            perf = perf_next; Light = Light_next; curr_time = curr_time_next; curr_time_h = curr_time_h_next; Occupancy = Occupancy_next
-            SC_norm = SC_norm_next; SC_temp = SC_temp_next; Light_feed = Light_feed_next; SC_feed = SC_feed_next
-
-            # break while loop when end of this episode
-            if done:
-                break
-
-        Perc = (100 * float(R)/float(len(Time_hist)))
-        print(Text + ", Epis: " + str(episode) + "/" + str(tot_episodes) + ", Rew: " + str(R) + ", Max_R: " + str(best_reward) + ", Started: " + Start_Real_Time)
-        if R < 0:
-            R = 0
-        Tot_Reward.append(R); Tot_Episodes.append(episode)
-        if R > best_reward:
-            global Time_Best; global Light_Best; global cnt_Best; global SC_Best; global perf_Best; global Action_Best; global r_Best; global SC_Best_norm_hist; global SC_Feed_Best; global Light_Feed_Best; global Occup_Best
-            Light_Best = Light_hist; Action_Best = Action_hist; r_Best = r_hist; cnt_Best = cnt_hist; best_reward = R; Time_Best = Time_hist
-            perf_Best = perf_hist; SC_Best = SC_hist; SC_Best_norm_hist = SC_norm_hist; Perc_Best = Perc; Occup_Best = Occup_hist; Light_Feed_Best = Light_feed_hist; SC_Feed_Best = SC_feed_hist;
-            rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, episode)
-            rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
-            with open('Saved_Data/' + Text + '.pkl', 'w') as f:  # Python 3: open(..., 'wb')
-                pickle.dump([Light_Best, Action_Best, r_Best, cnt_Best, best_reward, Time_Best, perf_Best, SC_Best, SC_Best_norm_hist, Perc_Best, Occup_Best, Light_Feed_Best, SC_Feed_Best, Tot_Episodes, Tot_Reward, Text, episode], f)
-
-        if episode % save_rev_rate == 0:
-            rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, episode)
-
+            Environ.printing(Text, episode, tot_episodes)
 
 #-------------------- MAIN ----------------------------
 #PROBLEM = 'Seaquest-v0'
 #env = Environment(PROBLEM)
 env = Environment()
-
-global Time_Best; global Light_Best; global cnt_Best; global SC_Best; global perf_Best; global Action_Best; global r_Best; global SC_Best_norm_hist; global SC_Feed_Best; global Light_Feed_Best; global Occup_Best; global Tot_Reward; global Tot_Episodes;
-global episode; global best_reward
-Light_Best = []; SC_Best = []; perf_Best = []; Time_Best = []; Action_Best = []; r_Best = []; cnt_Best = []; SC_Best_norm_hist = []; SC_Feed_Best = []; Light_Feed_Best = []; Occup_Best = []; Tot_Reward = []; Tot_Episodes = []
-best_reward = 0
-episode = 0
 
 #stateCnt  = (IMAGE_STACK, IMAGE_WIDTH, IMAGE_HEIGHT)
 stateCnt = len(diction_feat)
@@ -446,30 +320,15 @@ randomAgent = RandomAgent(actionCnt)
 
 #try:
 print("Initialization with random agent...")
+'''
 while randomAgent.exp < MEMORY_CAPACITY:
     env.run(randomAgent)
     print(randomAgent.exp, "/", MEMORY_CAPACITY)
-
+'''
 agent.memory = randomAgent.memory
 
 randomAgent = None
 
 print("Starting learning")
-for i in range(0, tot_episodes):
-    env.run(agent)
-    episode += 1
-#finally:
-#    agent.brain.model.save("Seaquest-DQN-PER.h5")
 
-#Start Plotting
-print("Best Lenght", len(Time_Best))
-print("Best total Reward", best_reward)
-
-# end of game
-print('Game Over and Best Perc Reward:', "%.2f%%" % Perc_Best, Text)
-End_Time = datetime.datetime.now().strftime('%m-%d %H:%M')
-print("Start Time: " + Start_Real_Time + ", End Time: " + End_Time)
-
-#fig.savefig('/mnt/c/Users/Francesco/Desktop/Dropbox/EH/RL/RL_MY/Images/'+Text+'.png', bbox_inches='tight')
-rp.plot_legend_text(Time_Best, Light_Best, Light_Feed_Best, Action_Best, r_Best, perf_Best, SC_Best, SC_Best_norm_hist, SC_Feed_Best, Occup_Best, Text, best_reward, tot_episodes)
-rp.plot_reward_text(Tot_Episodes, Tot_Reward, Text, best_reward, tot_episodes)
+env.run(agent)
